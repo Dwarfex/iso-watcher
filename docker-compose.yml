@@ -1,0 +1,17 @@
+version: "3.8"
+
+services:
+  iso-watcher:
+    build: watcher/.
+    container_name: iso_watcher
+    restart: unless-stopped
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - DELETE_ISO=true
+      - APP_UID=1000
+      - APP_GID=1000
+    volumes:
+      - ./arm/media/completed:/media/input
+      - ./watcher/media/work:/media/work
+      - ./watcher/media/output:/media/output
+    privileged: true   # required for mount loop
