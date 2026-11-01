@@ -12,4 +12,6 @@ COPY watcher.sh /app/watcher.sh
 
 RUN chmod +x /app/watcher.sh
 
+ENV EXTRACT_ALL=false
+
 CMD ["/app/watcher.sh"]

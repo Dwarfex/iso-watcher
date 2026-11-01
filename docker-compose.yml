@@ -6,6 +6,7 @@ services:
     restart: unless-stopped
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-info}
+      - EXTRACT_ALL=false
       - DELETE_ISO=true
       - APP_UID=1000
       - APP_GID=1000

@@ -14,6 +14,7 @@ TARGET_GID="${APP_GID:-1000}"
 mkdir -p "$WORK" "$OUTPUT" "$MOUNT"
 
 LOG_LEVEL="${LOG_LEVEL:-info}"
+EXTRACT_ALL="${EXTRACT_ALL:-false}"
 
 # -------- Logging --------
 
@@ -88,6 +89,11 @@ is_mp3_cd() {
 
     umount "$MOUNT"
 
+    if [[ "$EXTRACT_ALL" == "true" ]]; then
+        log_info "EXTRACT_ALL is true, proceeding regardless of MP3 count."
+        return 0
+    fi
+
     if [[ "$COUNT" -gt 0 ]]; then
         return 0
     else
@@ -95,43 +101,57 @@ is_mp3_cd() {
     fi
 }
 
-extract_mp3s() {
+extract_content() {
     ISO="$1"
     NAME="$2"
 
     TMP="$WORK/.extract_$NAME"
 
-    log_info "Extracting MP3s from $ISO → $TMP"
+    log_info "Extracting content from $ISO → $TMP"
 
     mkdir -p "$TMP"
 
     mount -o loop,ro "$ISO" "$MOUNT"
 
-    rsync -av --include="*/" --include="*.mp3" --exclude="*" \
-        "$MOUNT/" "$TMP/"
+    if [[ "$EXTRACT_ALL" == "true" ]]; then
+        log_info "Extracting all files..."
+        rsync -av "$MOUNT/" "$TMP/"
+    else
+        log_info "Extracting only MP3 files..."
+        rsync -av --include="*/" --include="*.mp3" --exclude="*" \
+            "$MOUNT/" "$TMP/"
+    fi
 
     umount "$MOUNT"
 
-    FILE_COUNT=$(find "$TMP" -type f -iname "*.mp3" | wc -l)
-    log_info "Extracted $FILE_COUNT MP3 files"
+    FILE_COUNT=$(find "$TMP" -type f | wc -l)
+    log_info "Extracted $FILE_COUNT files"
 
     # Extract metadata
-    ARTISTS=$(find "$TMP" -type f -iname "*.mp3" -exec ffprobe -v quiet -show_entries format_tags=artist -of default=noprint_wrappers=1:nokey=1 {} \; | awk '{$1=$1;print}' | grep -v '^$' | sort -uf || true)
-    ALBUMS=$(find "$TMP" -type f -iname "*.mp3" -exec ffprobe -v quiet -show_entries format_tags=album -of default=noprint_wrappers=1:nokey=1 {} \; | awk '{$1=$1;print}' | grep -v '^$' | sort -uf || true)
+    MP3_COUNT=$(find "$TMP" -type f -iname "*.mp3" | wc -l || true)
+    
+    if [[ "$MP3_COUNT" -gt 0 ]]; then
+        ARTISTS=$(find "$TMP" -type f -iname "*.mp3" -exec ffprobe -v quiet -show_entries format_tags=artist -of default=noprint_wrappers=1:nokey=1 {} \; | awk '{$1=$1;print}' | grep -v '^$' | sort -uf || true)
+        ALBUMS=$(find "$TMP" -type f -iname "*.mp3" -exec ffprobe -v quiet -show_entries format_tags=album -of default=noprint_wrappers=1:nokey=1 {} \; | awk '{$1=$1;print}' | grep -v '^$' | sort -uf || true)
 
-    ARTIST_COUNT=$(echo "$ARTISTS" | grep -v '^$' | wc -l || true)
-    ALBUM_COUNT=$(echo "$ALBUMS" | grep -v '^$' | wc -l || true)
+        ARTIST_COUNT=$(echo "$ARTISTS" | grep -v '^$' | wc -l || true)
+        ALBUM_COUNT=$(echo "$ALBUMS" | grep -v '^$' | wc -l || true)
 
-    if [[ "$ARTIST_COUNT" -eq 1 ]]; then
-        ARTIST="$ARTISTS"
+        if [[ "$ARTIST_COUNT" -eq 1 ]]; then
+            ARTIST="$ARTISTS"
+        else
+            ARTIST="various_artists"
+        fi
+
+        if [[ "$ALBUM_COUNT" -eq 1 ]]; then
+            ALBUM="$ALBUMS"
+        else
+            ALBUM="unknown_album"
+        fi
     else
-        ARTIST="various_artists"
-    fi
-
-    if [[ "$ALBUM_COUNT" -eq 1 ]]; then
-        ALBUM="$ALBUMS"
-    else
-        ALBUM="unknown_album"
+        log_info "No MP3s found for metadata extraction"
+        ARTIST="data"
+        ALBUM="unidentified"
     fi
 
     # Sanitize names for filesystem
@@ -216,7 +236,7 @@ process_iso() {
     HASH=$(md5sum "$TARGET_ISO" | awk '{print $1}' | cut -c1-8)
     log_info "ISO md5 hash: $HASH"
 
-    extract_mp3s "$TARGET_ISO" "${BASENAME}_${HASH}"
+    extract_content "$TARGET_ISO" "${BASENAME}_${HASH}"
 
     if [[ "${DELETE_ISO:-true}" == "true" ]]; then
         log_info "Deleting ISO: $TARGET_ISO"
